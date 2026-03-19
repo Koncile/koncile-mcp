@@ -1,0 +1,12 @@
+.git
+.venv
+.env
+__pycache__
+*.pyc
+*.egg-info
+dist
+build
+.pytest_cache
+tests
+infra-setup.sh
+deploy.sh
