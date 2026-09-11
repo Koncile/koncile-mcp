@@ -11,7 +11,7 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+from mcp.types import TextContent, Tool, ToolAnnotations
 
 from koncile_mcp.client import KoncileClient
 from koncile_mcp.config import Config
@@ -98,11 +98,24 @@ def _require(args: dict, *keys: str) -> None:
         raise ValueError(f"Missing required parameters: {', '.join(missing)}")
 
 
+UPLOAD_LINK_GUIDANCE = (
+    "These are pre-signed, single-use upload URLs. Do NOT fetch, open, or send a "
+    "request to them yourself as a way of inspecting them, and do not pass them "
+    "to a web-fetch or browser tool — a GET will fail. "
+    "If you can run shell commands and the file is on this machine, upload it "
+    "yourself:  curl -X PUT --upload-file \"<file>\" \"<upload_url>\"  — "
+    "otherwise show the command to the person you are helping and ask them to "
+    "run it. Each URL accepts exactly one file and expires. Once the uploads are "
+    "confirmed, call register_uploaded_files with the upload_ids to start "
+    "extraction."
+)
+
+
 # ---------------------------------------------------------------------------
 # Tool definitions
 # ---------------------------------------------------------------------------
 
-TOOLS: list[Tool] = [
+_TOOL_SPECS: list[Tool] = [
     # ── P0: Core document workflow ─────────────────────────────────────────
     Tool(
         name="upload_file",
@@ -123,6 +136,83 @@ TOOLS: list[Tool] = [
                 "template_id": {"type": "integer", "description": "Target template ID (optional)"},
                 "metadata": {"type": "string", "description": "Optional metadata string"},
             },
+        },
+    ),
+    Tool(
+        name="create_upload_links",
+        description=(
+            "Get upload links for one or more documents. This is the way to send a "
+            "document to Koncile when the file is not already readable from this "
+            "machine — it does not put the file's contents through the conversation. "
+            "Step 1 of 2: the file is uploaded to the returned URL, then "
+            "register_uploaded_files starts the extraction. "
+            + UPLOAD_LINK_GUIDANCE
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "filenames": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                    "description": (
+                        "File names with extension, e.g. ['invoice-01.pdf']. One "
+                        "upload link is returned per name. This is the name the "
+                        "document will carry in Koncile; it does not have to match "
+                        "the sender's local path."
+                    ),
+                },
+                "folder_id": {"type": "integer", "description": "Folder to place the documents in (optional)"},
+                "template_id": {"type": "integer", "description": "Template to extract with (optional; classified automatically if omitted)"},
+                "metadata": {"type": "string", "description": "Optional JSON string stored with the upload"},
+            },
+            "required": ["filenames"],
+        },
+    ),
+    Tool(
+        name="register_uploaded_files",
+        description=(
+            "Start extraction for files that have been uploaded to the links from "
+            "create_upload_links. Step 2 of 2. "
+            "Only call this once the uploads are confirmed: registering a file that "
+            "was never actually uploaded is refused, and there is no way from here "
+            "to check whether the bytes arrived. "
+            "Safe to retry — upload_ids that are already running come back under "
+            "'skipped' rather than being started twice. "
+            "Returns task IDs to poll with get_task_status."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "upload_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "minItems": 1,
+                    "description": (
+                        "The upload_id values from create_upload_links, for files "
+                        "that have been uploaded. All must come from the same "
+                        "create_upload_links call."
+                    ),
+                },
+            },
+            "required": ["upload_ids"],
+        },
+    ),
+    Tool(
+        name="get_fraud_analysis",
+        description=(
+            "Get Koncile's fraud analysis for a document: an overall verdict "
+            "(high/medium/low risk), a score, and the individual checks that "
+            "flagged something. "
+            "If fraud detection was never run on the document this says so "
+            "explicitly — that is NOT the same as the document being clean."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "document_id": {"type": "integer", "description": "The document ID"},
+            },
+            "required": ["document_id"],
         },
     ),
     Tool(
@@ -410,6 +500,94 @@ TOOLS: list[Tool] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Tool annotations
+# ---------------------------------------------------------------------------
+#
+# The MCP spec treats an unspecified destructiveHint as **true**, so it is the
+# read-only tools that have to be marked explicitly — an unannotated read looks
+# destructive to a client and gets a confirmation prompt it does not need.
+#
+# For read-only tools the other hints are meaningless (the spec says they only
+# apply when readOnlyHint is false), so they are left off rather than set to
+# false, which would just be noise.
+#
+# update_* counts as destructive: overwriting existing state in place is exactly
+# the spec's "destructive update". It is also idempotent — same arguments, same
+# end state. delete_* is both as well; a second delete is a no-op. create_* is
+# additive and not idempotent.
+#
+# openWorldHint is false everywhere: the reachable set is the caller's own
+# Koncile workspace, which is closed and enumerable.
+
+_RO = dict(readOnlyHint=True, openWorldHint=False)
+_ADD = dict(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
+_DESTRUCTIVE = dict(readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=False)
+# Additive but safe to repeat — registering an upload twice is reported as
+# skipped rather than started again.
+_ADD_IDEMPOTENT = dict(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+
+_ANNOTATIONS: dict[str, tuple[str, dict]] = {
+    "upload_file": ("Upload a document", _ADD),
+    "create_upload_links": ("Get upload links", _ADD),
+    "register_uploaded_files": ("Start extraction", _ADD_IDEMPOTENT),
+    "get_task_status": ("Check extraction status", _RO),
+    "list_documents": ("List documents", _RO),
+    "get_document_data": ("Read extracted data", _RO),
+    "get_fraud_analysis": ("Check a document for fraud", _RO),
+    "list_folders": ("List folders", _RO),
+    "get_folder": ("Get folder", _RO),
+    "create_folder": ("Create folder", _ADD),
+    "update_folder": ("Update folder", _DESTRUCTIVE),
+    "delete_folder": ("Delete folder", _DESTRUCTIVE),
+    "get_template": ("Get template", _RO),
+    "create_template": ("Create template", _ADD),
+    "update_template": ("Update template", _DESTRUCTIVE),
+    "delete_template": ("Delete template", _DESTRUCTIVE),
+    "get_field": ("Get field", _RO),
+    "create_field": ("Create field", _ADD),
+    "update_field": ("Update field", _DESTRUCTIVE),
+    "delete_field": ("Delete field", _DESTRUCTIVE),
+    "get_instruction": ("Get instruction", _RO),
+    "create_instruction": ("Create instruction", _ADD),
+    "update_instruction": ("Update instruction", _DESTRUCTIVE),
+    "delete_instruction": ("Delete instruction", _DESTRUCTIVE),
+    "check_api_key": ("Verify API key", _RO),
+    "download_file": ("Download original file", _RO),
+    "delete_document": ("Delete document", _DESTRUCTIVE),
+}
+
+
+def _annotate(specs: list[Tool]) -> list[Tool]:
+    """Attach titles and behaviour hints from the table above.
+
+    Raises at import time if the table and the tool list disagree. That is the
+    point: without it, tool #28 ships unannotated a year from now and — because
+    the spec's default is destructive — quietly starts prompting for
+    confirmation, or worse, a new delete tool ships looking harmless.
+    """
+    mismatch = {t.name for t in specs} ^ set(_ANNOTATIONS)
+    if mismatch:
+        raise RuntimeError(
+            f"Tool annotation table out of sync with TOOLS: {sorted(mismatch)}"
+        )
+    annotated = []
+    for tool in specs:
+        title, hints = _ANNOTATIONS[tool.name]
+        annotated.append(
+            tool.model_copy(
+                update={
+                    "title": title,
+                    "annotations": ToolAnnotations(title=title, **hints),
+                }
+            )
+        )
+    return annotated
+
+
+TOOLS: list[Tool] = _annotate(_TOOL_SPECS)
+
+
 def tools_for(*, allow_local_files: bool) -> list[Tool]:
     """The tool list as a given transport can actually serve it.
 
@@ -507,6 +685,94 @@ async def handle_tool(
             metadata=args.get("metadata"),
         )
         return _text(result)
+
+    if name == "create_upload_links":
+        _require(args, "filenames")
+        result = await client.post_json(
+            "/v1/presign_upload",
+            {
+                "filenames": args["filenames"],
+                "folder_id": args.get("folder_id"),
+                "template_id": args.get("template_id"),
+                "metadata": args.get("metadata"),
+            },
+        )
+        links = [
+            {
+                "upload_id": f["upload_id"],
+                "filename": f["filename"],
+                "upload_url": f["upload_url"],
+                "expires_in_seconds": f["expires_in"],
+                "put_command": (
+                    f'curl -X PUT --upload-file "{f["filename"]}" "{f["upload_url"]}"'
+                ),
+            }
+            for f in result.get("files", [])
+        ]
+        return _text(
+            {
+                "upload_links": links,
+                "next_step": "register_uploaded_files",
+                "instructions_for_the_assistant": UPLOAD_LINK_GUIDANCE,
+            }
+        )
+
+    if name == "register_uploaded_files":
+        _require(args, "upload_ids")
+        result = await client.post_json(
+            "/v1/register_upload", {"upload_ids": args["upload_ids"]}
+        )
+        return _text({**result, "next_step": "get_task_status"})
+
+    if name == "get_fraud_analysis":
+        _require(args, "document_id")
+        doc = await client.get(
+            "/v1/fetch_document_data", document_id=args["document_id"]
+        )
+        # The four fraud keys are ABSENT, not null, when no fraud agent ran.
+        # Reporting that as a clean result would be the most damaging thing this
+        # tool could do, so it is the first thing checked.
+        if "Fraud_verdict" not in doc:
+            return _text(
+                {
+                    "document_id": args["document_id"],
+                    "fraud_detection_ran": False,
+                    "message": (
+                        "Fraud detection has not been run on this document — no "
+                        "fraud agent is enabled on its template. This is NOT a "
+                        "statement that the document is genuine; nothing was "
+                        "checked. Enable a fraud agent on the template and re-run "
+                        "the document to get an analysis."
+                    ),
+                }
+            )
+
+        tests = doc.get("Fraud_detection_tests") or []
+        # Keyed on the stable test id (T1, T4a, C1...), never the name: names are
+        # rendered in the *uploader's* language, so two accounts see different
+        # strings for the same check.
+        anomalies = [t for t in tests if t.get("verdict") == "anomaly"]
+        return _text(
+            {
+                "document_id": args["document_id"],
+                "fraud_detection_ran": True,
+                "verdict": doc.get("Fraud_verdict"),
+                "score": doc.get("Fraud_score"),
+                "anomalies_found": len(anomalies),
+                "checks": [
+                    {
+                        "id": t.get("id"),
+                        "name": t.get("name"),
+                        "verdict": t.get("verdict"),
+                        "risk": t.get("risk"),
+                        "score": t.get("score"),
+                        "justification": t.get("justification"),
+                    }
+                    for t in tests
+                ],
+            },
+            untrusted=True,
+        )
 
     if name == "get_task_status":
         _require(args, "task_id")
