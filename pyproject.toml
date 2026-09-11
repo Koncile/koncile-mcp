@@ -9,10 +9,33 @@ description = "MCP server for the Koncile document extraction API"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
+authors = [{ name = "Koncile", email = "support@koncile.ai" }]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "koncile",
+    "ocr",
+    "document-extraction",
+    "invoice",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Accounting",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# mcp is pinned below 2.0 deliberately. mcp 2.x removed the
+# @server.list_tools() / @server.call_tool() decorators in favour of
+# on_list_tools= callbacks, so an unbounded ">=1.0.0" means a fresh build today
+# produces a server that raises AttributeError the moment it starts. Migrating
+# to the 2.x API is its own change; until then this bound is what makes a
+# rebuild reproducible.
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.26,<2",
     "httpx>=0.27.0",
-    "uvicorn>=0.30.0",
 ]
 
 [project.scripts]
@@ -27,8 +50,25 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [project.optional-dependencies]
+# The HTTP transport only. starlette was previously not declared at all and
+# arrived transitively via mcp; uvicorn was a hard runtime dependency, so every
+# stdio user — which is the whole PyPI audience — installed a web server for a
+# transport they never start.
+http = [
+    "starlette>=0.37.0",
+    "uvicorn>=0.30.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "respx>=0.21",
+    "ruff>=0.6",
+    "starlette>=0.37.0",
+    "uvicorn>=0.30.0",
 ]
+
+[project.urls]
+Homepage = "https://koncile.ai"
+Documentation = "https://docs.koncile.ai/api-setup/koncile-mcp-server"
+Repository = "https://github.com/Koncile/koncile-mcp"
+Issues = "https://github.com/Koncile/koncile-mcp/issues"

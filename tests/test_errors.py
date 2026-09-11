@@ -2,14 +2,26 @@
 
 import httpx
 
-from koncile_mcp.errors import format_http_error, format_connection_error
+from koncile_mcp.errors import (
+    KoncileAPIError,
+    format_connection_error,
+    format_http_error,
+    http_error,
+)
 
 
-def _make_response(status: int, json_body: dict | None = None, text: str = "") -> httpx.Response:
+def _make_response(
+    status: int,
+    json_body: dict | None = None,
+    text: str = "",
+    headers: dict | None = None,
+) -> httpx.Response:
+    all_headers = dict(headers or {})
     if json_body is not None:
         import json
-        return httpx.Response(status, text=json.dumps(json_body), headers={"content-type": "application/json"})
-    return httpx.Response(status, text=text)
+        all_headers["content-type"] = "application/json"
+        return httpx.Response(status, text=json.dumps(json_body), headers=all_headers)
+    return httpx.Response(status, text=text, headers=all_headers)
 
 
 def test_401_error():
@@ -43,8 +55,40 @@ def test_502_error():
 
 
 def test_generic_4xx_error():
+    resp = _make_response(418, {"detail": "Teapot"})
+    assert format_http_error(resp) == "HTTP 418: Teapot"
+
+
+def test_429_tells_the_model_to_wait():
+    # The model reads this string and decides what to do next. Without an
+    # explicit instruction to wait, the natural reaction to an error is to try
+    # again immediately — which is what the rate limit exists to stop.
     resp = _make_response(429, {"detail": "Rate limited"})
-    assert format_http_error(resp) == "HTTP 429: Rate limited"
+    msg = format_http_error(resp)
+    assert "429" in msg
+    assert "do not retry in a loop" in msg
+
+
+def test_429_reports_retry_after_from_the_header():
+    resp = _make_response(429, {"detail": "Rate limited"}, headers={"retry-after": "12"})
+    assert "Retry after 12 seconds" in format_http_error(resp)
+
+
+def test_429_falls_back_to_the_body_field():
+    # The API sends both; the header is authoritative, the body is the fallback.
+    resp = _make_response(429, {"detail": "Rate limited", "retry_after_seconds": 7})
+    assert "Retry after 7 seconds" in format_http_error(resp)
+
+
+def test_http_error_keeps_the_status_readable():
+    # The status used to be buried in a formatted string, so nothing downstream
+    # could tell a rate limit from a validation error.
+    exc = http_error(_make_response(429, {"detail": "Rate limited"},
+                                    headers={"retry-after": "5"}))
+    assert isinstance(exc, KoncileAPIError)
+    assert isinstance(exc, RuntimeError)  # existing callers still catch it
+    assert exc.status == 429
+    assert exc.retry_after == 5.0
 
 
 def test_non_json_response():
