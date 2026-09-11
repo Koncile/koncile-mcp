@@ -7,7 +7,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-
 DEFAULT_API_URL = "https://api.koncile.ai"
 CONFIG_DIR = Path.home() / ".config" / "koncile"
 CONFIG_FILE = CONFIG_DIR / "config"

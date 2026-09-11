@@ -9,19 +9,16 @@ Each test:
 from __future__ import annotations
 
 import base64
-import io
 import json
 import os
 import socket
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlparse
 
-import anyio
 import pytest
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-
 
 # ---------------------------------------------------------------------------
 # Mock Koncile API
@@ -182,7 +179,6 @@ class MockKoncileHandler(BaseHTTPRequestHandler):
         if not self._check_auth():
             return
         path = self._path()
-        params = self._query_params()
         body_bytes = self._read_body()
 
         if path == "/v1/check_api_key":
@@ -284,7 +280,6 @@ class MockKoncileHandler(BaseHTTPRequestHandler):
         if not self._check_auth():
             return
         path = self._path()
-        params = self._query_params()
 
         if path in ("/v1/delete_folder", "/v1/delete_template",
                      "/v1/delete_field", "/v1/delete_instruction", "/v1/delete_doc"):

@@ -1,0 +1,78 @@
+name: build and push image
+
+# Builds the image that runs as fargate-mcp in production. Before this existed,
+# mcp_prod was pushed by hand from someone's machine and the running code
+# version was unknowable (KON-929).
+#
+# It builds and pushes only — rolling the ECS service stays a deliberate act.
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: docker-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # OIDC — no long-lived AWS keys in this repo
+
+jobs:
+  build:
+    # This repository is PUBLIC, so pull_request runs can come from forks.
+    # Never build-and-push on a pull request, and never use self-hosted runners
+    # here: either would let a fork's code run with our credentials.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute image tags
+        id: tags
+        run: |
+          # Mirrors the backend's build-version format so the two read alike.
+          VERSION="$(date -u +%Y%m%dT%H%M%S)-$(git rev-parse --short HEAD)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "semver=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # The trust policy on this role must name the exact refs
+          # (refs/heads/master and refs/tags/v*), never a wildcard on the repo:
+          # a wildcard would let any fork's pull_request run assume it.
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          # Pinned: the ECS task runs on x86, and a future arm64 runner would
+          # otherwise silently push an image that cannot boot there.
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:latest
+            ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ steps.tags.outputs.version }}
+            ${{ steps.tags.outputs.semver && format('{0}/{1}:{2}', steps.ecr.outputs.registry, vars.ECR_REPOSITORY, steps.tags.outputs.semver) || '' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "Pushed \`${{ vars.ECR_REPOSITORY }}:${{ steps.tags.outputs.version }}\` and \`:latest\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Not deployed. To roll out:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "aws ecs update-service --cluster Fargate-prod --service fargate-mcp --force-new-deployment --region ${{ vars.AWS_REGION }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"

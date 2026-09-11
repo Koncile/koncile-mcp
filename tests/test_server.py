@@ -2,13 +2,14 @@
 
 import base64
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-
 from mcp.types import Tool
 
+from koncile_mcp.client import KoncileClient
+from koncile_mcp.config import Config
 from koncile_mcp.server import (
     TOOLS,
     _require,
@@ -17,9 +18,6 @@ from koncile_mcp.server import (
     handle_tool,
     tools_for,
 )
-from koncile_mcp.client import KoncileClient
-from koncile_mcp.config import Config
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

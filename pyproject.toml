@@ -45,6 +45,19 @@ koncile-mcp-server = "koncile_mcp.http_server:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/koncile_mcp"]
 
+[tool.ruff]
+# Pinned explicitly so CI does not inherit whatever ruff config happens to be on
+# a contributor's machine, and so the rule set does not shift under us when ruff
+# changes its defaults.
+line-length = 100
+
+[tool.ruff.lint]
+# Deliberately narrow: the rules that catch real defects (undefined and unused
+# names, syntax-level errors) plus import ordering. Style opinions are left off
+# — a linter added to an existing codebase earns its place by finding bugs, not
+# by failing CI on 39 nested `with` statements in the test suite.
+select = ["E4", "E7", "E9", "F", "I"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"

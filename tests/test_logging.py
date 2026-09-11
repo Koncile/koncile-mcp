@@ -3,10 +3,10 @@
 import json
 import logging
 import sys
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from unittest.mock import AsyncMock
 
 from koncile_mcp import logging as klog
 from koncile_mcp.client import KoncileClient

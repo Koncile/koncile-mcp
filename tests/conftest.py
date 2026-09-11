@@ -1,7 +1,7 @@
 import pytest
 
-from koncile_mcp.config import Config
 from koncile_mcp.client import KoncileClient
+from koncile_mcp.config import Config
 
 BASE_URL = "http://test-api.local"
 API_KEY = "sk-test-123"
