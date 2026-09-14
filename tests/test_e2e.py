@@ -12,6 +12,7 @@ import base64
 import json
 import os
 import socket
+import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -313,9 +314,18 @@ def mock_api_url():
 
 @pytest.fixture(scope="module")
 def server_params(mock_api_url):
-    """StdioServerParameters for launching koncile-mcp."""
+    """StdioServerParameters for launching the server under test.
+
+    Launches it as ``<this interpreter> -m koncile_mcp.server`` rather than by
+    the console-script name. Resolving ``koncile-mcp`` from PATH silently runs
+    whichever copy happens to be installed on the machine: a stale global
+    install made every e2e test here pass against months-old code while the
+    working tree went unexercised. Pinning the interpreter guarantees the
+    subprocess imports the same package the rest of the suite does.
+    """
     return StdioServerParameters(
-        command="koncile-mcp",
+        command=sys.executable,
+        args=["-m", "koncile_mcp.server"],
         env={
             **os.environ,
             "KONCILE_API_URL": mock_api_url,
@@ -344,13 +354,17 @@ class TestE2ECoreWorkflow:
     """P0 tools: upload, task status, documents, folders."""
 
     @pytest.mark.asyncio
-    async def test_list_tools_returns_all_24(self, server_params):
+    async def test_list_tools_returns_every_registered_tool(self, server_params):
         async with stdio_client(server_params) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 tools_result = await session.list_tools()
                 names = {t.name for t in tools_result.tools}
-                assert len(names) == 24
+                # Compare against the registry rather than a literal: a
+                # hardcoded count has to be found and updated by hand, and this
+                # one was not.
+                from koncile_mcp.server import tools_for
+                assert names == {t.name for t in tools_for(allow_local_files=True)}
                 assert "upload_file" in names
                 assert "check_api_key" in names
                 assert "delete_document" in names
