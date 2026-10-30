@@ -9,10 +9,33 @@ description = "MCP server for the Koncile document extraction API"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
+authors = [{ name = "Koncile", email = "support@koncile.ai" }]
+keywords = [
+    "mcp",
+    "model-context-protocol",
+    "koncile",
+    "ocr",
+    "document-extraction",
+    "invoice",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Office/Business :: Financial :: Accounting",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# mcp is pinned below 2.0 deliberately. mcp 2.x removed the
+# @server.list_tools() / @server.call_tool() decorators in favour of
+# on_list_tools= callbacks, so an unbounded ">=1.0.0" means a fresh build today
+# produces a server that raises AttributeError the moment it starts. Migrating
+# to the 2.x API is its own change; until then this bound is what makes a
+# rebuild reproducible.
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.26,<2",
     "httpx>=0.27.0",
-    "uvicorn>=0.30.0",
 ]
 
 [project.scripts]
@@ -22,13 +45,41 @@ koncile-mcp-server = "koncile_mcp.http_server:main"
 [tool.hatch.build.targets.wheel]
 packages = ["src/koncile_mcp"]
 
+[tool.ruff]
+# Pinned explicitly so CI does not inherit whatever ruff config happens to be on
+# a contributor's machine, and so the rule set does not shift under us when ruff
+# changes its defaults.
+line-length = 100
+
+[tool.ruff.lint]
+# Deliberately narrow: the rules that catch real defects (undefined and unused
+# names, syntax-level errors) plus import ordering. Style opinions are left off
+# — a linter added to an existing codebase earns its place by finding bugs, not
+# by failing CI on 39 nested `with` statements in the test suite.
+select = ["E4", "E7", "E9", "F", "I"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [project.optional-dependencies]
+# The HTTP transport imports these directly, so they are declared rather than
+# relied on transitively (mcp itself already depends on both).
+http = [
+    "starlette>=0.37.0",
+    "uvicorn>=0.30.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "respx>=0.21",
+    "ruff>=0.6",
+    "starlette>=0.37.0",
+    "uvicorn>=0.30.0",
 ]
+
+[project.urls]
+Homepage = "https://koncile.ai"
+Documentation = "https://docs.koncile.ai/api-setup/koncile-mcp-server"
+Repository = "https://github.com/Koncile/koncile-mcp"
+Issues = "https://github.com/Koncile/koncile-mcp/issues"

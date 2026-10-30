@@ -1,9 +1,8 @@
 """Tests for config.py — environment variable and config file loading."""
 
-import os
 import pytest
 
-from koncile_mcp.config import Config, DEFAULT_API_URL, CONFIG_FILE, _read_config_file
+from koncile_mcp.config import DEFAULT_API_URL, Config
 
 
 def test_from_env_with_all_vars(monkeypatch):

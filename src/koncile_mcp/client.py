@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 
 from koncile_mcp.config import Config
-from koncile_mcp.errors import format_http_error, format_connection_error
+from koncile_mcp.errors import format_connection_error, http_error
 
 
 class KoncileClient:
@@ -49,7 +49,7 @@ class KoncileClient:
             raise RuntimeError(format_connection_error(self._config.api_url, exc)) from exc
 
         if resp.status_code >= 400:
-            raise RuntimeError(format_http_error(resp))
+            raise http_error(resp)
 
         return resp
 

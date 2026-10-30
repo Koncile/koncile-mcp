@@ -1,8 +1,9 @@
 """Tests for the Koncile HTTP client."""
 
 import base64
-import pytest
+
 import httpx
+import pytest
 import respx
 
 BASE_URL = "http://test-api.local"
@@ -64,7 +65,7 @@ async def test_get_does_not_add_trailing_slash(client):
 @respx.mock
 @pytest.mark.asyncio
 async def test_post_json_adds_trailing_slash(client):
-    route = respx.post(f"{BASE_URL}/v1/create_folder/").mock(
+    respx.post(f"{BASE_URL}/v1/create_folder/").mock(
         return_value=httpx.Response(200, json={"id": 1, "name": "Test"})
     )
     result = await client.post_json("/v1/create_folder", {"name": "Test"})

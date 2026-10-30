@@ -24,8 +24,14 @@ git clone https://github.com/Koncile/koncile-mcp.git
 cd koncile-mcp
 pip install -e .
 
-# Or directly
+# Or from PyPI
 pip install koncile-mcp
+```
+
+The HTTP transport (`koncile-mcp-server`) needs an extra:
+
+```bash
+pip install "koncile-mcp[http]"
 ```
 
 ## Configuration
@@ -91,16 +97,46 @@ If using the environment variable approach instead of the config file:
 }
 ```
 
-## Available Tools (24 total)
+## Sending a document
+
+The hosted server runs in the cloud, so it cannot read a file off your machine
+and a PDF is far too large to pass through the conversation as text. Uploading
+is therefore two steps:
+
+```
+create_upload_links(["invoice.pdf"])   ->  an upload URL per file
+   upload the file to that URL          (the returned curl command does it)
+register_uploaded_files([upload_id])   ->  task IDs
+get_task_status(task_id)               ->  poll until DONE
+get_document_data(document_id)         ->  the extracted fields
+```
+
+In Claude Code or Cursor the assistant can run the upload command itself, so
+this is a single request with no manual step. Elsewhere, paste the command.
+
+`upload_file` is the one-step alternative and still works, but only for small
+files: it carries the file as base64 through the conversation. Its `file_path`
+option is available **only when running locally over stdio** — the hosted server
+has no access to your filesystem and says so rather than failing obscurely.
+
+## Available Tools (27 total)
+
+Every tool is annotated with a title and a read/write hint, so clients can tell
+which ones only read and which ones change or delete your data. The nine
+destructive tools (`update_*` and `delete_*`) are marked as such and most clients
+will ask you to confirm before running one.
 
 ### Core Document Workflow
 
 | Tool | Description |
 |------|-------------|
-| `upload_file` | Upload a file (via local path or base64) for extraction. Returns task IDs. |
+| `create_upload_links` | Get upload URLs for one or more files (step 1 of 2). |
+| `register_uploaded_files` | Start extraction for uploaded files (step 2 of 2). Returns task IDs. |
+| `upload_file` | One-step upload for small files (base64; local path when running over stdio). |
 | `get_task_status` | Poll processing status of an upload task. |
 | `list_documents` | List document IDs, optionally filtered by date range. |
 | `get_document_data` | Get extracted fields and line items for a document. |
+| `get_fraud_analysis` | Get the fraud verdict, score and per-check findings for a document. |
 | `list_folders` | List all folders with their templates. |
 
 ### Folder Management
@@ -207,3 +243,21 @@ KONCILE_API_URL=http://localhost:8000 KONCILE_API_KEY=your-key \
 ## License
 
 MIT
+
+## Limits and privacy
+
+- **Tool results are capped** at roughly 150,000 characters by most clients.
+  `download_file` refuses a file too large to fit rather than returning a
+  truncated base64 string, which would decode to a corrupt file.
+- **The hosted server stores nothing.** Your API key is read from the
+  `Authorization` header on each request and discarded; it is never written to
+  a log or to disk.
+- **What is logged**: the tool name, how long it took, whether it succeeded, and
+  a salted one-way fingerprint of your API key so usage can be attributed
+  without the key ever being recorded, and the ids of the objects acted on
+  (documents, tasks, folders, templates, fields, instructions). File names, file contents, extracted
+  values and instruction text are never logged.
+- **Document content is untrusted.** Tool results carrying text extracted from a
+  document include a `_koncile_content_notice` field reminding the assistant
+  that the text is data to report, not instructions to follow — the document was
+  written by a third party.
