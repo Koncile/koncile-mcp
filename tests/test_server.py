@@ -862,9 +862,35 @@ class TestCreateUploadLinks:
         assert link["expires_in_seconds"] == 900
         # The command is the deliverable: in Claude Code or Cursor the assistant
         # runs it itself, elsewhere the person pastes it.
-        assert link["put_command"].startswith("curl -X PUT --upload-file")
+        assert link["put_command"].startswith("curl --fail -X PUT --upload-file")
         assert "https://s3.example/put?sig=abc" in link["put_command"]
         assert parsed["next_step"] == "register_uploaded_files"
+
+    @pytest.mark.asyncio
+    async def test_command_uploads_the_callers_path_and_cannot_run_shell_code(
+        self, mock_client
+    ):
+        import shlex
+        path = "/Users/me/Downloads/inv$(id>/tmp/pwned) `x`.pdf"
+        mock_client.post_json.return_value = {
+            "files": [{
+                "upload_id": 1,
+                # The backend keeps only the base name.
+                "filename": "inv$(id>/tmp/pwned) `x`.pdf",
+                "upload_url": "https://s3.example/put?sig=a&b=c",
+                "expires_in": 900,
+            }]
+        }
+        result = await handle_tool(
+            mock_client, "create_upload_links", {"filenames": [path]}
+        )
+        cmd = json.loads(result[0].text)["upload_links"][0]["put_command"]
+
+        # What the shell sees is exactly the path and URL, nothing expanded.
+        assert shlex.split(cmd) == [
+            "curl", "--fail", "-X", "PUT", "--upload-file", path,
+            "https://s3.example/put?sig=a&b=c",
+        ]
 
     @pytest.mark.asyncio
     async def test_tells_the_model_not_to_fetch_the_url(self, mock_client):

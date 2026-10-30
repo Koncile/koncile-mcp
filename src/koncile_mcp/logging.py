@@ -97,7 +97,10 @@ def caller_fingerprint(api_key: str | None) -> str | None:
     """
     if not api_key:
         return None
-    salt = os.environ.get("KONCILE_API_KEY_LOG_HASH_SALT", "")
+    # API_KEY_LOG_HASH_SALT is the name in the Api deploy doc (mcp-server-deploy.md).
+    salt = os.environ.get("KONCILE_API_KEY_LOG_HASH_SALT") or os.environ.get(
+        "API_KEY_LOG_HASH_SALT", ""
+    )
     return hashlib.sha256(f"{salt}{api_key}".encode()).hexdigest()[:16]
 
 

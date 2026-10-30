@@ -68,6 +68,13 @@ class TestFingerprint:
         expected = hashlib.sha256(b"sharedsk-abc").hexdigest()[:16]
         assert klog.caller_fingerprint("sk-abc") == expected
 
+    def test_reads_the_salt_name_from_the_api_deploy_doc(self, monkeypatch):
+        import hashlib
+        monkeypatch.delenv("KONCILE_API_KEY_LOG_HASH_SALT", raising=False)
+        monkeypatch.setenv("API_KEY_LOG_HASH_SALT", "shared")
+        expected = hashlib.sha256(b"sharedsk-abc").hexdigest()[:16]
+        assert klog.caller_fingerprint("sk-abc") == expected
+
     def test_no_key_no_fingerprint(self):
         assert klog.caller_fingerprint(None) is None
 

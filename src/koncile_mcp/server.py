@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import os
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -103,7 +104,7 @@ UPLOAD_LINK_GUIDANCE = (
     "request to them yourself as a way of inspecting them, and do not pass them "
     "to a web-fetch or browser tool — a GET will fail. "
     "If you can run shell commands and the file is on this machine, upload it "
-    "yourself:  curl -X PUT --upload-file \"<file>\" \"<upload_url>\"  — "
+    "yourself by running the put_command returned for each file — "
     "otherwise show the command to the person you are helping and ask them to "
     "run it. Each URL accepts exactly one file and expires. Once the uploads are "
     "confirmed, call register_uploaded_files with the upload_ids to start "
@@ -156,10 +157,9 @@ _TOOL_SPECS: list[Tool] = [
                     "items": {"type": "string"},
                     "minItems": 1,
                     "description": (
-                        "File names with extension, e.g. ['invoice-01.pdf']. One "
-                        "upload link is returned per name. This is the name the "
-                        "document will carry in Koncile; it does not have to match "
-                        "the sender's local path."
+                        "Paths of the files to upload, e.g. ['/Users/me/invoice-01.pdf']. "
+                        "One upload link is returned per entry, and its put_command "
+                        "uploads that path. Koncile keeps only the base name."
                     ),
                 },
                 "folder_id": {"type": "integer", "description": "Folder to place the documents in (optional)"},
@@ -704,10 +704,13 @@ async def handle_tool(
                 "upload_url": f["upload_url"],
                 "expires_in_seconds": f["expires_in"],
                 "put_command": (
-                    f'curl -X PUT --upload-file "{f["filename"]}" "{f["upload_url"]}"'
+                    f"curl --fail -X PUT --upload-file {shlex.quote(path)} "
+                    f"{shlex.quote(f['upload_url'])}"
                 ),
             }
-            for f in result.get("files", [])
+            # The backend returns links in request order and only the base name,
+            # so the command is built from the caller's path, quoted for the shell.
+            for path, f in zip(args["filenames"], result.get("files", []))
         ]
         return _text(
             {

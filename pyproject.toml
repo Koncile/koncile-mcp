@@ -63,10 +63,8 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 
 [project.optional-dependencies]
-# The HTTP transport only. starlette was previously not declared at all and
-# arrived transitively via mcp; uvicorn was a hard runtime dependency, so every
-# stdio user — which is the whole PyPI audience — installed a web server for a
-# transport they never start.
+# The HTTP transport imports these directly, so they are declared rather than
+# relied on transitively (mcp itself already depends on both).
 http = [
     "starlette>=0.37.0",
     "uvicorn>=0.30.0",

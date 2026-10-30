@@ -254,7 +254,8 @@ MIT
   a log or to disk.
 - **What is logged**: the tool name, how long it took, whether it succeeded, and
   a salted one-way fingerprint of your API key so usage can be attributed
-  without the key ever being recorded. File names, file contents, extracted
+  without the key ever being recorded, and the ids of the objects acted on
+  (documents, tasks, folders, templates, fields, instructions). File names, file contents, extracted
   values and instruction text are never logged.
 - **Document content is untrusted.** Tool results carrying text extracted from a
   document include a `_koncile_content_notice` field reminding the assistant

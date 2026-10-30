@@ -4,7 +4,9 @@ name: build and push image
 # mcp_prod was pushed by hand from someone's machine and the running code
 # version was unknowable (KON-929).
 #
-# It builds and pushes only — rolling the ECS service stays a deliberate act.
+# This workflow does not deploy, but it pushes :latest on every merge to master,
+# and the Api repo's deploy-prod-latest.sh rolls fargate-mcp-prod from mcp_prod:latest:
+# the next backend prod deploy ships whatever master last pushed.
 
 on:
   push:
@@ -72,7 +74,7 @@ jobs:
         run: |
           echo "Pushed \`${{ vars.ECR_REPOSITORY }}:${{ steps.tags.outputs.version }}\` and \`:latest\`." >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Not deployed. To roll out:" >> "$GITHUB_STEP_SUMMARY"
+          echo "Not deployed by this workflow; the next backend prod deploy will roll \`:latest\`. To roll out now:" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "aws ecs update-service --cluster Fargate-prod --service fargate-mcp --force-new-deployment --region ${{ vars.AWS_REGION }}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
